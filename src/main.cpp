@@ -44,6 +44,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 .press-row label{font-size:.85rem;color:#aaa}
 .press-row input[type=number]{width:70px;background:#222;border:1px solid #444;color:#eee;padding:6px;border-radius:6px;text-align:center;font-size:.9rem}
 .press-row span{font-size:.85rem;color:#aaa}
+.copy-btn{background:#2a2a4a;color:#aaa;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.75rem}
+.copy-btn:hover{background:#7c83ff;color:#fff}
 .press-btn.long{background:#7c4aff}
 .press-btn.long:hover{background:#9a6aff}
 .status{margin-top:16px;font-size:.8rem;color:#666}
@@ -51,7 +53,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 </head>
 <body>
 <div class="card">
-<h1>Servo Motor Tester</h1>
+<div style="display:flex;align-items:center;justify-content:center;gap:8px"><h1 id="title">Button Presser</h1><button class="copy-btn" onclick="copyMac()">Copy</button></div>
 <div class="angle-display"><span id="val">90</span>&deg;</div>
 <input type="range" id="slider" min="0" max="180" value="90">
 <div class="presets">
@@ -98,6 +100,9 @@ slider.addEventListener('input',()=>{
   send(slider.value);
 });
 
+const mac='%%MAC%%';
+document.getElementById('title').textContent='Button Presser '+mac;
+function copyMac(){navigator.clipboard.writeText(mac);}
 function set(v){slider.value=v;val.textContent=v;send(v);}
 
 function send(angle){
@@ -132,7 +137,9 @@ function doPress(type){
 )rawliteral";
 
 void handleRoot() {
-  server.send(200, "text/html", HTML);
+  String page = HTML;
+  page.replace("%%MAC%%", WiFi.macAddress());
+  server.send(200, "text/html", page);
 }
 
 void handleSet() {
