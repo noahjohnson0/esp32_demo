@@ -3,13 +3,21 @@
 #include <WebServer.h>
 #include <ESP32Servo.h>
 
-const char* ssid = "YOUR_SSID";
-const char* password = "YOUR_PASSWORD";
+#ifndef WIFI_SSID
+#error "WIFI_SSID not set — create a .env file (see .env.example)"
+#endif
+#ifndef WIFI_PASSWORD
+#error "WIFI_PASSWORD not set — create a .env file (see .env.example)"
+#endif
+
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
 #define SERVO_PIN 13
 
 Servo servo;
 WebServer server(80);
+volatile bool pressBusy = false;
 
 const char HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -123,13 +131,34 @@ function sweep(){
   },30);
 }
 
+let countdownIv=null;
+let pressing=false;
 function doPress(type){
+  if(pressing){status.textContent='Busy — wait for current press to finish';return;}
   const rest=document.getElementById('restAngle').value;
   const pa=document.getElementById('pressAngle').value;
-  const hold=type==='long'?document.getElementById('longHold').value:document.getElementById('shortHold').value;
+  const hold=parseInt(type==='long'?document.getElementById('longHold').value:document.getElementById('shortHold').value);
+  if(countdownIv){clearInterval(countdownIv);countdownIv=null;}
+  pressing=true;
+  status.textContent=type.toUpperCase()+': moving to press…';
   fetch('/press?rest='+rest+'&press='+pa+'&hold='+hold)
-    .then(r=>r.ok?status.textContent=type+' press!':status.textContent='Error')
-    .catch(()=>status.textContent='Connection lost');
+    .then(r=>{if(r.status===409){pressing=false;status.textContent='Busy (server)';if(countdownIv){clearInterval(countdownIv);countdownIv=null;}}})
+    .catch(()=>{pressing=false;status.textContent='Connection lost';});
+  // Server settles 200ms before the press, then holds, then returns to rest.
+  setTimeout(()=>{
+    const start=Date.now();
+    status.textContent=type.toUpperCase()+': holding '+hold+'ms';
+    countdownIv=setInterval(()=>{
+      const left=hold-(Date.now()-start);
+      if(left<=0){
+        clearInterval(countdownIv);countdownIv=null;
+        status.textContent=type.toUpperCase()+': releasing…';
+        setTimeout(()=>{status.textContent=type.toUpperCase()+' done';pressing=false;},250);
+      }else{
+        status.textContent=type.toUpperCase()+': holding '+left+'ms';
+      }
+    },50);
+  },200);
 }
 </script>
 </body>
@@ -154,19 +183,29 @@ void handleSet() {
 }
 
 void handlePress() {
-  if (server.hasArg("rest") && server.hasArg("press") && server.hasArg("hold")) {
-    int restAngle = constrain(server.arg("rest").toInt(), 0, 180);
-    int pressAngle = constrain(server.arg("press").toInt(), 0, 180);
-    int holdTime = constrain(server.arg("hold").toInt(), 10, 10000);
-    servo.write(restAngle);
-    delay(200);
-    servo.write(pressAngle);
-    delay(holdTime);
-    servo.write(restAngle);
-    server.send(200, "text/plain", "OK");
-  } else {
+  if (!server.hasArg("rest") || !server.hasArg("press") || !server.hasArg("hold")) {
     server.send(400, "text/plain", "Missing params");
+    return;
   }
+  if (pressBusy) {
+    Serial.println("[press] rejected: busy");
+    server.send(409, "text/plain", "Busy");
+    return;
+  }
+  pressBusy = true;
+  int restAngle = constrain(server.arg("rest").toInt(), 0, 180);
+  int pressAngle = constrain(server.arg("press").toInt(), 0, 180);
+  int holdTime = constrain(server.arg("hold").toInt(), 10, 10000);
+  Serial.printf("[press] start rest=%d press=%d hold=%dms\n", restAngle, pressAngle, holdTime);
+  servo.write(restAngle);
+  delay(200);
+  Serial.println("[press] holding");
+  servo.write(pressAngle);
+  delay(holdTime);
+  servo.write(restAngle);
+  Serial.println("[press] done");
+  pressBusy = false;
+  server.send(200, "text/plain", "OK");
 }
 
 void setup() {
