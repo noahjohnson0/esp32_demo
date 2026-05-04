@@ -3,8 +3,8 @@
 #include <WebServer.h>
 #include <ESP32Servo.h>
 
-const char* ssid = "entropy";
-const char* password = "Godhor-zamtux-5myfdi";
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASSWORD";
 
 #define SERVO_PIN 13
 
